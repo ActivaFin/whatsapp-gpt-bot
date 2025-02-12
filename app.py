@@ -27,7 +27,8 @@ def verify_webhook():
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     data = request.get_json()
-    
+    print("Mensaje recibido:", json.dumps(data, indent=2))  # 👀 Esto imprimirá los mensajes en Render Logs
+
     if "entry" in data:
         for entry in data["entry"]:
             for change in entry["changes"]:
@@ -36,29 +37,32 @@ def receive_message():
                     sender = msg["from"]
                     text = msg["text"]["body"]
 
-                    # Llamar a GPT-4 para obtener respuesta
-                    gpt_response = requests.post(
-                        "https://api.openai.com/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {GPT_API_KEY}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": "gpt-4",
-                            "messages": [{"role": "user", "content": text}]
-                        }
-                    ).json()
+                    print(f"📩 Mensaje de {sender}: {text}")  # 🔍 Verifica si el bot está recibiendo el mensaje
 
-                    # Extraer respuesta y enviarla a WhatsApp
-                   try:
+                    try:
+                        # Llamar a GPT-4 para obtener respuesta
+                        gpt_response = requests.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {GPT_API_KEY}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": "gpt-4",
+                                "messages": [{"role": "user", "content": text}]
+                            }
+                        ).json()
+
+                        # Extraer respuesta si existe, sino manejar error
                         reply_text = gpt_response["choices"][0]["message"]["content"]
                     except KeyError:
-                        print(f"⚠️ Error: Respuesta inválida de OpenAI → {gpt_response}")  # Log de error en Render
+                        print(f"⚠️ Error: Respuesta inválida de OpenAI → {gpt_response}")
                         reply_text = "Lo siento, hubo un problema con la respuesta de la IA."
 
+                    # Enviar respuesta a WhatsApp
+                    send_whatsapp_message(sender, reply_text)
 
     return "OK", 200
-
 # Función para enviar mensajes de WhatsApp
 def send_whatsapp_message(to, text):
     headers = {
