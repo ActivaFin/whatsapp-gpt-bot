@@ -1,13 +1,14 @@
+import os
+from flask import Flask, request
 import requests
 import json
-from flask import Flask, request
 
 app = Flask(__name__)
 
-# Variables de entorno (se configuran en Render)
-WHATSAPP_TOKEN = "TU_TOKEN_DE_META"
-WHATSAPP_PHONE_ID = "TU_PHONE_ID_DE_WHATSAPP"
-GPT_API_KEY = "TU_CLAVE_OPENAI"
+# Cargar variables de entorno
+WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
+WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
+GPT_API_KEY = os.getenv('GPT_API_KEY')
 
 # URL de la API de WhatsApp
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
