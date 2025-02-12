@@ -10,7 +10,7 @@ WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
 GPT_API_KEY = os.getenv('GPT_API_KEY')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
-ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # Reemplázalo con tu Assistant ID de OpenAI
+ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # 👈 Usa tu Assistant de OpenAI aquí
 
 # URL de la API de WhatsApp
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
@@ -34,25 +34,69 @@ def send_whatsapp_message(to, text):
 def get_gpt_response(prompt):
     try:
         response = requests.post(
-            f"https://api.openai.com/v1/assistants/{ASSISTANT_ID}/messages",
+            "https://api.openai.com/v1/threads",
             headers={
                 "Authorization": f"Bearer {GPT_API_KEY}",
                 "Content-Type": "application/json"
             },
-            json={
-                "messages": [{"role": "user", "content": prompt}]
-            }
+            json={}
         )
-        response.raise_for_status()
-        data = response.json()
-        print("📡 Respuesta de GPT_Mundoliva:", json.dumps(data, indent=2))  # Verificar respuesta en logs
-        return data["choices"][0]["message"]["content"]
+        thread_id = response.json().get("id")
+
+        if not thread_id:
+            print("⚠️ No se pudo crear un hilo en OpenAI.")
+            return "Lo siento, hubo un error con la IA."
+
+        # Enviar mensaje al Assistant
+        response = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/messages",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={"role": "user", "content": prompt}
+        )
+
+        # Iniciar la ejecución del Assistant
+        response = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/runs",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={"assistant_id": ASSISTANT_ID}
+        )
+
+        run_id = response.json().get("id")
+        if not run_id:
+            print("⚠️ No se pudo iniciar la ejecución del Assistant.")
+            return "Hubo un error con la respuesta de la IA."
+
+        # Esperar la respuesta del Assistant
+        import time
+        for _ in range(10):  # Esperar hasta 10 intentos
+            time.sleep(2)  # Esperar 2 segundos entre intentos
+            response = requests.get(
+                f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
+                headers={"Authorization": f"Bearer {GPT_API_KEY}"}
+            )
+            status = response.json().get("status")
+            if status == "completed":
+                break
+
+        # Obtener la respuesta final del Assistant
+        response = requests.get(
+            f"https://api.openai.com/v1/threads/{thread_id}/messages",
+            headers={"Authorization": f"Bearer {GPT_API_KEY}"}
+        )
+        messages = response.json().get("data", [])
+        if messages:
+            return messages[-1]["content"]  # Último mensaje del Assistant
+        else:
+            return "Hubo un error obteniendo la respuesta de la IA."
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Error en OpenAI: {e}")  # Muestra errores en logs
         return "Hubo un error con la respuesta de la IA."
-    except KeyError:
-        print("⚠️ OpenAI no devolvió una respuesta válida.")
-        return "Lo siento, hubo un problema con la IA."
 
 # Webhook de verificación para Meta
 @app.route("/webhook", methods=["GET"])
