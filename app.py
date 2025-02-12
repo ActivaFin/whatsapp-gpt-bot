@@ -1,45 +1,42 @@
 import os
-from flask import Flask, request
 import requests
 import json
+from flask import Flask, request
 
 app = Flask(__name__)
 
-# Cargar variables de entorno
+# Variables de entorno (deben estar configuradas en Render)
 WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
 GPT_API_KEY = os.getenv('GPT_API_KEY')
+VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')  # Asegúrate de que en Meta usaste este mismo token
 
-# URL de la API de WhatsApp
-WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
+# Ruta para verificar Webhook en Meta
+@app.route("/webhook", methods=["GET"])
+def verify_webhook():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
 
-# Función para enviar respuestas a WhatsApp
-def send_whatsapp_message(to, text):
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": text}
-    }
-    requests.post(WHATSAPP_URL, headers=headers, json=data)
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return challenge, 200  # Meta espera recibir este "challenge"
+    else:
+        return "Verificación fallida", 403
 
-# Webhook para recibir mensajes de WhatsApp
+# Ruta para recibir mensajes de WhatsApp
 @app.route("/webhook", methods=["POST"])
-def webhook():
+def receive_message():
     data = request.get_json()
-    if data["entry"]:
+    
+    if "entry" in data:
         for entry in data["entry"]:
-            for message in entry["changes"]:
-                if "messages" in message["value"]:
-                    msg = message["value"]["messages"][0]
+            for change in entry["changes"]:
+                if "messages" in change["value"]:
+                    msg = change["value"]["messages"][0]
                     sender = msg["from"]
                     text = msg["text"]["body"]
 
-                    # Enviar la consulta a OpenAI
+                    # Llamar a GPT-4 para obtener respuesta
                     gpt_response = requests.post(
                         "https://api.openai.com/v1/chat/completions",
                         headers={
@@ -52,11 +49,27 @@ def webhook():
                         }
                     ).json()
 
+                    # Extraer respuesta y enviarla a WhatsApp
                     reply_text = gpt_response["choices"][0]["message"]["content"]
                     send_whatsapp_message(sender, reply_text)
 
     return "OK", 200
 
+# Función para enviar mensajes de WhatsApp
+def send_whatsapp_message(to, text):
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text}
+    }
+    requests.post(f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages", headers=headers, json=data)
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app, host="0.0.0.0", port=8080)
+
