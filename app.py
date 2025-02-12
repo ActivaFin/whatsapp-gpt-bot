@@ -50,8 +50,12 @@ def receive_message():
                     ).json()
 
                     # Extraer respuesta y enviarla a WhatsApp
-                    reply_text = gpt_response["choices"][0]["message"]["content"]
-                    send_whatsapp_message(sender, reply_text)
+                   try:
+                        reply_text = gpt_response["choices"][0]["message"]["content"]
+                    except KeyError:
+                        print(f"⚠️ Error: Respuesta inválida de OpenAI → {gpt_response}")  # Log de error en Render
+                        reply_text = "Lo siento, hubo un problema con la respuesta de la IA."
+
 
     return "OK", 200
 
