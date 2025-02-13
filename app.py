@@ -16,6 +16,28 @@ ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # 👈 Usa tu Assistant de OpenA
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
 
 # Función para enviar mensajes a WhatsApp
+
+# Función para enviar mensajes a WhatsApp
+def send_whatsapp_message(to, text):
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text}
+    }
+    response = requests.post(WHATSAPP_URL, headers=headers, json=data)
+    
+    if response.status_code != 200:
+        print(f"⚠️ Error al enviar mensaje a WhatsApp: {response.json()}")
+
+    return response.json()
+
+
+
 def get_gpt_response(prompt):
     try:
         # Crear un nuevo hilo en OpenAI Assistants API v2
