@@ -16,42 +16,31 @@ ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # 👈 Usa tu Assistant de OpenA
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
 
 # Función para enviar mensajes a WhatsApp
-def send_whatsapp_message(to, text):
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": text}
-    }
-    response = requests.post(WHATSAPP_URL, headers=headers, json=data)
-    return response.json()
-
-# Función para obtener respuesta del Assistant de OpenAI
 def get_gpt_response(prompt):
     try:
+        # Crear un nuevo hilo en OpenAI Assistants API v2
         response = requests.post(
             "https://api.openai.com/v1/threads",
             headers={
                 "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
                 "Content-Type": "application/json"
             },
             json={}
         )
-        thread_id = response.json().get("id")
+        thread_data = response.json()
+        thread_id = thread_data.get("id")
 
         if not thread_id:
-            print("⚠️ No se pudo crear un hilo en OpenAI.")
-            return "Lo siento, hubo un error con la IA."
+            print(f"⚠️ Error: No se pudo crear un hilo en OpenAI → {thread_data}")
+            return "Lo siento, hubo un problema con la IA."
 
         # Enviar mensaje al Assistant
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
                 "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
                 "Content-Type": "application/json"
             },
             json={"role": "user", "content": prompt}
@@ -62,38 +51,48 @@ def get_gpt_response(prompt):
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers={
                 "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
                 "Content-Type": "application/json"
             },
             json={"assistant_id": ASSISTANT_ID}
         )
 
-        run_id = response.json().get("id")
+        run_data = response.json()
+        run_id = run_data.get("id")
+
         if not run_id:
-            print("⚠️ No se pudo iniciar la ejecución del Assistant.")
+            print(f"⚠️ Error: No se pudo iniciar la ejecución del Assistant → {run_data}")
             return "Hubo un error con la respuesta de la IA."
 
         # Esperar la respuesta del Assistant
         import time
-        for _ in range(10):  # Esperar hasta 10 intentos
+        for _ in range(10):  # Intentar durante 10 ciclos de espera
             time.sleep(2)  # Esperar 2 segundos entre intentos
             response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
-                headers={"Authorization": f"Bearer {GPT_API_KEY}"}
+                headers={
+                    "Authorization": f"Bearer {GPT_API_KEY}",
+                    "OpenAI-Beta": "assistants=v2"
+                }
             )
-            status = response.json().get("status")
-            if status == "completed":
+            run_status = response.json().get("status")
+            if run_status == "completed":
                 break
 
-        # Obtener la respuesta final del Assistant
+        # Obtener la respuesta del Assistant
         response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
-            headers={"Authorization": f"Bearer {GPT_API_KEY}"}
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2"
+            }
         )
         messages = response.json().get("data", [])
         if messages:
             return messages[-1]["content"]  # Último mensaje del Assistant
         else:
             return "Hubo un error obteniendo la respuesta de la IA."
+    
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Error en OpenAI: {e}")  # Muestra errores en logs
         return "Hubo un error con la respuesta de la IA."
