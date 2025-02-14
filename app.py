@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Crear la instancia de Flask
 app = Flask(__name__)
 
+# Ruta raíz
 @app.route("/", methods=["GET"])
 def home():
     return "¡Hola! Este es el servidor de WhatsApp GPT Bot.", 200
