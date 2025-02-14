@@ -132,7 +132,14 @@ def get_gpt_response(prompt):
 
         messages = response.json().get("data", [])
         if messages:
-            return messages[-1]["content"]  # Último mensaje del Assistant
+            # Asegúrate de que la respuesta sea un string
+            last_message = messages[-1]["content"]
+            if isinstance(last_message, list):
+                return last_message[0]["text"]["value"]  # Si es una lista, extrae el texto
+            elif isinstance(last_message, str):
+                return last_message  # Si es un string, devuélvelo directamente
+            else:
+                return str(last_message)  # Si es otro tipo, conviértelo a string
         else:
             return "Lo siento, no se pudo obtener una respuesta de la IA."
 
