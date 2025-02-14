@@ -38,14 +38,18 @@ def send_whatsapp_message(to, text):
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
-        "text": {"body": text}
+        "text": {"body": str(text)}  # 👈 Asegúrate de que `text` sea un string
     }
-    response = requests.post(WHATSAPP_URL, headers=headers, json=data)
-    
-    if response.status_code != 200:
-        logger.error(f"⚠️ Error al enviar mensaje a WhatsApp: {response.json()}")
-
-    return response.json()
+    try:
+        response = requests.post(WHATSAPP_URL, headers=headers, json=data)
+        response.raise_for_status()  # Lanza una excepción si el código de estado no es 200
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"⚠️ Error al enviar mensaje a WhatsApp: {e.response.json()}")
+        return None
+    except Exception as e:
+        logger.error(f"⚠️ Error inesperado al enviar mensaje a WhatsApp: {e}")
+        return None
 
 # Función para obtener respuesta de OpenAI
 def get_gpt_response(prompt):
