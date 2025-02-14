@@ -137,7 +137,7 @@ def get_gpt_response(prompt):
     except requests.exceptions.RequestException as e:
         logger.error(f"⚠️ Error en OpenAI: {e}")
         return "Lo siento, hubo un problema con la IA."
-
+        
 # Webhook de verificación para Meta
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
