@@ -1,3 +1,6 @@
+import os
+import requests
+import json
 import logging
 from flask import Flask, request, jsonify
 
@@ -5,6 +8,144 @@ from flask import Flask, request, jsonify
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Crear la instancia de Flask
+app = Flask(__name__)
+
+# Configuración de variables de entorno
+WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
+WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
+GPT_API_KEY = os.getenv('GPT_API_KEY')
+VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
+ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # 👈 Usa tu Assistant de OpenAI aquí
+
+# URL de la API de WhatsApp
+WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
+
+# Función para enviar mensajes a WhatsApp
+def send_whatsapp_message(to, text):
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text}
+    }
+    response = requests.post(WHATSAPP_URL, headers=headers, json=data)
+    
+    if response.status_code != 200:
+        logger.error(f"⚠️ Error al enviar mensaje a WhatsApp: {response.json()}")
+
+    return response.json()
+
+# Función para obtener respuesta de OpenAI
+def get_gpt_response(prompt):
+    try:
+        # Crear un nuevo hilo en OpenAI
+        response = requests.post(
+            "https://api.openai.com/v1/threads",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
+                "Content-Type": "application/json"
+            },
+            json={}
+        )
+        if response.status_code != 200:
+            logger.error(f"⚠️ Error al crear hilo en OpenAI: {response.json()}")
+            return "Lo siento, hubo un problema con la IA."
+
+        thread_id = response.json().get("id")
+        if not thread_id:
+            return "Lo siento, no se pudo crear un hilo en la IA."
+
+        # Enviar mensaje al hilo
+        response = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/messages",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
+                "Content-Type": "application/json"
+            },
+            json={"role": "user", "content": prompt}
+        )
+        if response.status_code != 200:
+            logger.error(f"⚠️ Error al enviar mensaje a OpenAI: {response.json()}")
+            return "Lo siento, hubo un problema con la IA."
+
+        # Iniciar la ejecución del Assistant
+        response = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/runs",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
+                "Content-Type": "application/json"
+            },
+            json={"assistant_id": ASSISTANT_ID}
+        )
+        if response.status_code != 200:
+            logger.error(f"⚠️ Error al iniciar ejecución en OpenAI: {response.json()}")
+            return "Lo siento, hubo un problema con la IA."
+
+        run_id = response.json().get("id")
+        if not run_id:
+            return "Lo siento, no se pudo iniciar la ejecución en la IA."
+
+        # Esperar la respuesta del Assistant
+        for _ in range(10):  # Máximo 10 intentos
+            time.sleep(2)  # Esperar 2 segundos
+            response = requests.get(
+                f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
+                headers={
+                    "Authorization": f"Bearer {GPT_API_KEY}",
+                    "OpenAI-Beta": "assistants=v2"
+                }
+            )
+            if response.status_code != 200:
+                logger.error(f"⚠️ Error al verificar ejecución en OpenAI: {response.json()}")
+                return "Lo siento, hubo un problema con la IA."
+
+            run_status = response.json().get("status")
+            if run_status == "completed":
+                break
+
+        # Obtener la respuesta del Assistant
+        response = requests.get(
+            f"https://api.openai.com/v1/threads/{thread_id}/messages",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2"
+            }
+        )
+        if response.status_code != 200:
+            logger.error(f"⚠️ Error al obtener mensajes de OpenAI: {response.json()}")
+            return "Lo siento, hubo un problema con la IA."
+
+        messages = response.json().get("data", [])
+        if messages:
+            return messages[-1]["content"]  # Último mensaje del Assistant
+        else:
+            return "Lo siento, no se pudo obtener una respuesta de la IA."
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"⚠️ Error en OpenAI: {e}")
+        return "Lo siento, hubo un problema con la IA."
+
+# Webhook de verificación para Meta
+@app.route("/webhook", methods=["GET"])
+def verify_webhook():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return challenge, 200
+    else:
+        return "Verificación fallida", 403
+
+# Webhook para recibir mensajes de WhatsApp
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     try:
@@ -27,10 +168,10 @@ def receive_message():
                 text = msg["text"]["body"]
                 logger.info(f"📩 Mensaje de {sender}: {text}")
 
-                # Obtener respuesta de OpenAI Assistant
+                # Obtener respuesta de OpenAI
                 reply_text = get_gpt_response(text)
 
-                # Enviar la respuesta de vuelta a WhatsApp
+                # Enviar respuesta a WhatsApp
                 send_whatsapp_message(sender, reply_text)
 
         return jsonify({"status": "success"}), 200
@@ -38,3 +179,9 @@ def receive_message():
     except Exception as e:
         logger.error(f"⚠️ Error en receive_message: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# Iniciar la aplicación Flask
+if __name__ == "__main__":
+    from waitress import serve
+    port = int(os.getenv("PORT", 8080))
+    serve(app, host="0.0.0.0", port=port)
