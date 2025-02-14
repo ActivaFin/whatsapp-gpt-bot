@@ -11,6 +11,10 @@ logger = logging.getLogger(__name__)
 # Crear la instancia de Flask
 app = Flask(__name__)
 
+@app.route("/", methods=["GET"])
+def home():
+    return "¡Hola! Este es el servidor de WhatsApp GPT Bot.", 200
+
 # Configuración de variables de entorno
 WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
