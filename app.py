@@ -3,6 +3,8 @@ import requests
 import json
 import logging
 from flask import Flask, request, jsonify
+import time  # 👈 Agrega esta línea
+
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
