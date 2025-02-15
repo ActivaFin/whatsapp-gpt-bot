@@ -17,7 +17,7 @@ WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
 GPT_API_KEY = os.getenv('GPT_API_KEY')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
-ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"
+ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # Usa tu Assistant de OpenAI aquí
 
 # URL de la API de WhatsApp
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
@@ -25,72 +25,63 @@ WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
 # Lista global para evitar respuestas duplicadas
 processed_messages = set()
 
-# 📌 Webhook de verificación para Meta
+# Webhook de verificación para Meta
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
-
     if mode == "subscribe" and token == VERIFY_TOKEN:
         return challenge, 200
     else:
         return "Verificación fallida", 403
 
-# 📌 Webhook para recibir mensajes de WhatsApp
+# Webhook para recibir mensajes de WhatsApp
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     try:
         data = request.get_json()
         logger.info("📩 Mensaje recibido: %s", json.dumps(data, indent=2))
-
         if "entry" not in data:
             return jsonify({"status": "error", "message": "Invalid payload"}), 400
 
         for entry in data["entry"]:
             for change in entry["changes"]:
-                
-                # 📌 Filtrar mensajes de estado (sent, delivered, read)
+                # Filtrar eventos que no son mensajes de usuario
                 if "messages" not in change["value"]:
                     logger.info("ℹ️ Evento ignorado (no es un mensaje de usuario)")
                     continue
-                
-                msg = change["value"]["messages"][0]
 
-                # 📌 Filtrar eventos de estado
+                msg = change["value"]["messages"][0]
                 if msg.get("type") != "text":
                     logger.info("ℹ️ Evento ignorado (no es un mensaje de texto)")
                     continue
 
                 message_id = msg.get("id")
-                
-                # 📌 Evitar responder dos veces al mismo mensaje
                 if message_id in processed_messages:
                     logger.info(f"⚠️ Mensaje ya procesado: {message_id}")
-                    return jsonify({"status": "success"}), 200
+                    continue
 
                 sender = msg["from"]
                 text = msg["text"]["body"]
                 logger.info(f"📩 Mensaje de {sender}: {text}")
 
-                # 📌 Obtener respuesta de OpenAI
+                # Obtener respuesta de OpenAI
                 reply_text = get_gpt_response(text)
-                
-                # 📌 Si OpenAI falla, usar respuesta predeterminada
                 if not reply_text or reply_text.strip() == "":
                     reply_text = "Lo siento, hubo un problema con mi respuesta. ¿Puedes intentar reformular la pregunta?"
 
                 logger.info(f"✅ Respuesta de OpenAI: {reply_text}")
 
-                # 📌 Evitar responder con el mismo mensaje recibido
+                # Evitar responder con el mismo mensaje recibido
                 if reply_text.strip().lower() == text.strip().lower():
                     reply_text = "Entiendo tu mensaje. ¿En qué puedo ayudarte específicamente?"
 
-                # 📌 Enviar respuesta a WhatsApp
+                # Enviar respuesta a WhatsApp
                 send_whatsapp_message(sender, reply_text)
                 logger.info(f"✅ Mensaje enviado a WhatsApp: {reply_text}")
 
-                # 📌 Marcar el mensaje como procesado
+                # Marcar el mensaje como procesado
                 processed_messages.add(message_id)
 
         return jsonify({"status": "success"}), 200
@@ -99,7 +90,7 @@ def receive_message():
         logger.error(f"⚠️ Error en receive_message: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# 📌 Función para enviar mensajes a WhatsApp
+# Función para enviar mensajes a WhatsApp
 def send_whatsapp_message(to, text):
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -109,7 +100,7 @@ def send_whatsapp_message(to, text):
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
-        "text": {"body": text}  
+        "text": {"body": text}
     }
     try:
         response = requests.post(WHATSAPP_URL, headers=headers, json=data)
@@ -122,9 +113,10 @@ def send_whatsapp_message(to, text):
         logger.error(f"⚠️ Error inesperado al enviar mensaje a WhatsApp: {e}")
         return None
 
-# 📌 Función para obtener respuesta de OpenAI
+# Función para obtener respuesta de OpenAI
 def get_gpt_response(prompt):
     try:
+        # Crear un nuevo hilo en OpenAI
         response = requests.post(
             "https://api.openai.com/v1/threads",
             headers={
@@ -135,13 +127,15 @@ def get_gpt_response(prompt):
             json={}
         )
         if response.status_code != 200:
-            logger.error(f"⚠️ Error al crear hilo en OpenAI: {response.json()}")
+            logger.error("⚠️ Error al crear hilo en OpenAI: %s", response.json())
             return None
 
         thread_id = response.json().get("id")
         if not thread_id:
+            logger.error("⚠️ No se obtuvo thread_id de OpenAI")
             return None
 
+        # Enviar el mensaje del usuario al hilo
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
@@ -151,12 +145,11 @@ def get_gpt_response(prompt):
             },
             json={"role": "user", "content": prompt}
         )
-
         if response.status_code != 200:
-            logger.error(f"⚠️ Error al enviar mensaje a OpenAI: {response.json()}")
+            logger.error("⚠️ Error al enviar mensaje a OpenAI: %s", response.json())
             return None
 
-        # Espera 3 segundos antes de verificar
+        # Esperar 3 segundos antes de verificar la respuesta
         time.sleep(3)
         response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
@@ -165,26 +158,30 @@ def get_gpt_response(prompt):
                 "OpenAI-Beta": "assistants=v2"
             }
         )
-
         if response.status_code != 200:
-            logger.error(f"⚠️ Error al obtener mensajes de OpenAI: {response.json()}")
+            logger.error("⚠️ Error al obtener mensajes de OpenAI: %s", response.json())
             return None
 
         messages = response.json().get("data", [])
+        logger.info("Mensajes de OpenAI: %s", messages)
         if messages:
-            # 📌 Se extrae correctamente el texto de la respuesta de OpenAI
-            content = messages[-1].get("content", [])
-            if isinstance(content, list) and len(content) > 0:
-                return content[0].get("text", {}).get("value", "Lo siento, no tengo una respuesta en este momento.")
-            return "Lo siento, no tengo una respuesta en este momento."
-
-        return "Lo siento, no tengo una respuesta en este momento."
-
+            last_message = messages[-1].get("content")
+            # Si la respuesta es una cadena, devuélvela directamente
+            if isinstance(last_message, str):
+                return last_message
+            # Si es una lista, intenta extraer el valor del primer elemento
+            elif isinstance(last_message, list) and len(last_message) > 0:
+                text_value = last_message[0].get("text", {}).get("value")
+                if text_value:
+                    return text_value
+            # Fallback: convertir a string
+            return str(last_message)
+        return "Lo siento, no se pudo obtener una respuesta de la IA."
     except requests.exceptions.RequestException as e:
-        logger.error(f"⚠️ Error en OpenAI: {e}")
+        logger.error("⚠️ Error en OpenAI: %s", e)
         return "Lo siento, hubo un problema con la IA."
 
-# 📌 Iniciar la aplicación Flask
+# Iniciar la aplicación Flask
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.getenv("PORT", 8080))
