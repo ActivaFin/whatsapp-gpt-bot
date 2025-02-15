@@ -131,7 +131,7 @@ def send_whatsapp_message(to, text):
         logger.error(f"⚠️ Error inesperado al enviar mensaje a WhatsApp: {e}")
         return None
 
-# Función para obtener respuesta de OpenAI, incorporando el vector de la base de conocimientos en el prompt
+# Función para obtener respuesta de OpenAI, incorporando el vector en el prompt
 def get_gpt_response(prompt):
     try:
         # Crear un nuevo hilo en OpenAI
@@ -150,7 +150,7 @@ def get_gpt_response(prompt):
             logger.error("⚠️ No se obtuvo thread_id de OpenAI")
             return None
 
-        # Enviar el mensaje del usuario al hilo con el prompt que incluye el vector en el contenido
+        # Enviar el mensaje del usuario al hilo con el prompt que incluye el vector
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
@@ -162,7 +162,7 @@ def get_gpt_response(prompt):
         )
         response.raise_for_status()
 
-        # Ejecutar el asistente (se remueve el parámetro knowledge_base_vector para evitar error 400)
+        # Ejecutar el asistente (se remueve knowledge_base_vector del payload)
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers={
@@ -225,8 +225,15 @@ def get_gpt_response(prompt):
         return "Lo siento, no se pudo obtener una respuesta de la IA."
         
     except requests.exceptions.RequestException as e:
+        try:
+            error_json = e.response.json() if e.response else {}
+            if error_json.get("last_error", {}).get("code") == "rate_limit_exceeded":
+                logger.error("⚠️ Se ha excedido la cuota de uso de OpenAI.")
+                return "Lo siento, la IA está saturada. Por favor, inténtalo de nuevo más tarde."
+        except Exception:
+            pass
         logger.error("⚠️ Error en OpenAI: %s", e)
-        return "Lo siento, hubo un problema con la IA."
+        return "Lo siento, hubo un problema con la IA. Por favor, inténtalo de nuevo más tarde."
 
 # ----------------- Iniciar la Aplicación Flask -----------------
 if __name__ == "__main__":
