@@ -172,8 +172,8 @@ def get_gpt_response(prompt):
             return None
 
         # Polling para verificar el estado del run
-        max_retries = 5
-        retry_delay = 3  # segundos
+        max_retries = 10  # Aumenta el número de reintentos
+        retry_delay = 5  # Aumenta el tiempo de espera entre reintentos
         for _ in range(max_retries):
             time.sleep(retry_delay)
             response = requests.get(
@@ -185,10 +185,12 @@ def get_gpt_response(prompt):
             )
             response.raise_for_status()
             run_status = response.json().get("status")
+            logger.info(f"Estado del run: {run_status}")  # Log para depuración
             if run_status == "completed":
                 break
             elif run_status in ["failed", "cancelled"]:
                 logger.error(f"⚠️ El run falló o fue cancelado: {run_status}")
+                logger.error(f"Respuesta completa de OpenAI: {response.json()}")  # Log para depuración
                 return None
 
         # Obtener la respuesta del asistente
