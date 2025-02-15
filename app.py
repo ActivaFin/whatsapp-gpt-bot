@@ -17,7 +17,7 @@ WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
 GPT_API_KEY = os.getenv('GPT_API_KEY')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
-ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # 👈 Usa tu Assistant de OpenAI aquí
+ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"
 
 # URL de la API de WhatsApp
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
@@ -50,7 +50,7 @@ def receive_message():
         for entry in data["entry"]:
             for change in entry["changes"]:
                 
-                # 📌 Filtrar mensajes de estado (sent, delivered, read) y procesar solo mensajes de usuario
+                # 📌 Filtrar mensajes de estado (sent, delivered, read)
                 if "messages" not in change["value"]:
                     logger.info("ℹ️ Evento ignorado (no es un mensaje de usuario)")
                     continue
@@ -75,7 +75,16 @@ def receive_message():
 
                 # 📌 Obtener respuesta de OpenAI
                 reply_text = get_gpt_response(text)
+                
+                # 📌 Si OpenAI falla, usar respuesta predeterminada
+                if not reply_text or reply_text.strip() == "":
+                    reply_text = "Lo siento, hubo un problema con mi respuesta. ¿Puedes intentar reformular la pregunta?"
+
                 logger.info(f"✅ Respuesta de OpenAI: {reply_text}")
+
+                # 📌 Evitar responder con el mismo mensaje recibido
+                if reply_text.strip().lower() == text.strip().lower():
+                    reply_text = "Entiendo tu mensaje. ¿En qué puedo ayudarte específicamente?"
 
                 # 📌 Enviar respuesta a WhatsApp
                 send_whatsapp_message(sender, reply_text)
@@ -100,7 +109,7 @@ def send_whatsapp_message(to, text):
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
-        "text": {"body": text}  # 👈 Aquí se asegura que se envía el texto generado por OpenAI, no el recibido
+        "text": {"body": text}  
     }
     try:
         response = requests.post(WHATSAPP_URL, headers=headers, json=data)
@@ -127,11 +136,11 @@ def get_gpt_response(prompt):
         )
         if response.status_code != 200:
             logger.error(f"⚠️ Error al crear hilo en OpenAI: {response.json()}")
-            return "Lo siento, hubo un problema con la IA."
+            return None
 
         thread_id = response.json().get("id")
         if not thread_id:
-            return "Lo siento, no se pudo crear un hilo en la IA."
+            return None
 
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
@@ -145,9 +154,9 @@ def get_gpt_response(prompt):
 
         if response.status_code != 200:
             logger.error(f"⚠️ Error al enviar mensaje a OpenAI: {response.json()}")
-            return "Lo siento, hubo un problema con la IA."
+            return None
 
-        # Espera de 3 segundos antes de verificar
+        # Espera 3 segundos antes de verificar
         time.sleep(3)
         response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
@@ -159,13 +168,17 @@ def get_gpt_response(prompt):
 
         if response.status_code != 200:
             logger.error(f"⚠️ Error al obtener mensajes de OpenAI: {response.json()}")
-            return "Lo siento, hubo un problema con la IA."
+            return None
 
         messages = response.json().get("data", [])
         if messages:
-            return messages[-1]["content"][0]["text"]["value"]
-        else:
-            return "Lo siento, no se pudo obtener una respuesta de la IA."
+            # 📌 Se extrae correctamente el texto de la respuesta de OpenAI
+            content = messages[-1].get("content", [])
+            if isinstance(content, list) and len(content) > 0:
+                return content[0].get("text", {}).get("value", "Lo siento, no tengo una respuesta en este momento.")
+            return "Lo siento, no tengo una respuesta en este momento."
+
+        return "Lo siento, no tengo una respuesta en este momento."
 
     except requests.exceptions.RequestException as e:
         logger.error(f"⚠️ Error en OpenAI: {e}")
