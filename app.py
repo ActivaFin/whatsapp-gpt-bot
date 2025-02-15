@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuración de variables de entorno
+required_env_vars = ["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "GPT_API_KEY", "VERIFY_TOKEN"]
+for var in required_env_vars:
+    if not os.getenv(var):
+        logger.error(f"⚠️ Falta la variable de entorno: {var}")
+        exit(1)
+
 WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
 GPT_API_KEY = os.getenv('GPT_API_KEY')
@@ -131,16 +137,13 @@ def get_gpt_response(prompt):
             },
             json={}
         )
-        if response.status_code != 200:
-            logger.error("⚠️ Error al crear hilo en OpenAI: %s", response.json())
-            return None
-
+        response.raise_for_status()
         thread_id = response.json().get("id")
         if not thread_id:
             logger.error("⚠️ No se obtuvo thread_id de OpenAI")
             return None
 
-        # Enviar el mensaje del usuario al hilo con el prompt con contexto
+        # Enviar el mensaje del usuario al hilo
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
@@ -150,12 +153,45 @@ def get_gpt_response(prompt):
             },
             json={"role": "user", "content": prompt}
         )
-        if response.status_code != 200:
-            logger.error("⚠️ Error al enviar mensaje a OpenAI: %s", response.json())
+        response.raise_for_status()
+
+        # Ejecutar el asistente
+        response = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/runs",
+            headers={
+                "Authorization": f"Bearer {GPT_API_KEY}",
+                "OpenAI-Beta": "assistants=v2",
+                "Content-Type": "application/json"
+            },
+            json={"assistant_id": ASSISTANT_ID}
+        )
+        response.raise_for_status()
+        run_id = response.json().get("id")
+        if not run_id:
+            logger.error("⚠️ No se obtuvo run_id de OpenAI")
             return None
 
-        # Esperar 3 segundos antes de obtener la respuesta
-        time.sleep(3)
+        # Polling para verificar el estado del run
+        max_retries = 5
+        retry_delay = 3  # segundos
+        for _ in range(max_retries):
+            time.sleep(retry_delay)
+            response = requests.get(
+                f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
+                headers={
+                    "Authorization": f"Bearer {GPT_API_KEY}",
+                    "OpenAI-Beta": "assistants=v2"
+                }
+            )
+            response.raise_for_status()
+            run_status = response.json().get("status")
+            if run_status == "completed":
+                break
+            elif run_status in ["failed", "cancelled"]:
+                logger.error(f"⚠️ El run falló o fue cancelado: {run_status}")
+                return None
+
+        # Obtener la respuesta del asistente
         response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
@@ -163,10 +199,7 @@ def get_gpt_response(prompt):
                 "OpenAI-Beta": "assistants=v2"
             }
         )
-        if response.status_code != 200:
-            logger.error("⚠️ Error al obtener mensajes de OpenAI: %s", response.json())
-            return None
-
+        response.raise_for_status()
         messages = response.json().get("data", [])
         logger.info("Respuesta completa de OpenAI: %s", json.dumps(messages, indent=2))
         if messages:
