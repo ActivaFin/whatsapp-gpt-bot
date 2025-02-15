@@ -131,7 +131,7 @@ def send_whatsapp_message(to, text):
         logger.error(f"⚠️ Error inesperado al enviar mensaje a WhatsApp: {e}")
         return None
 
-# Función para obtener respuesta de OpenAI, incorporando el vector de la base de conocimientos
+# Función para obtener respuesta de OpenAI, incorporando el vector de la base de conocimientos en el prompt
 def get_gpt_response(prompt):
     try:
         # Crear un nuevo hilo en OpenAI
@@ -150,7 +150,7 @@ def get_gpt_response(prompt):
             logger.error("⚠️ No se obtuvo thread_id de OpenAI")
             return None
 
-        # Enviar el mensaje del usuario al hilo con el prompt que incluye el vector
+        # Enviar el mensaje del usuario al hilo con el prompt que incluye el vector en el contenido
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
@@ -162,7 +162,7 @@ def get_gpt_response(prompt):
         )
         response.raise_for_status()
 
-        # Ejecutar el asistente, pasando también el vector de la base de conocimientos
+        # Ejecutar el asistente (se remueve el parámetro knowledge_base_vector para evitar error 400)
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers={
@@ -171,8 +171,7 @@ def get_gpt_response(prompt):
                 "Content-Type": "application/json"
             },
             json={
-                "assistant_id": ASSISTANT_ID,
-                "knowledge_base_vector": KNOWLEDGE_BASE_VECTOR
+                "assistant_id": ASSISTANT_ID
             }
         )
         response.raise_for_status()
