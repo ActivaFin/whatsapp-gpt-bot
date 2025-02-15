@@ -17,13 +17,15 @@ WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
 WHATSAPP_PHONE_ID = os.getenv('WHATSAPP_PHONE_ID')
 GPT_API_KEY = os.getenv('GPT_API_KEY')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
-ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # Asegúrate de que este ID corresponde a tu asistente con conocimiento de Mundoliva
+ASSISTANT_ID = "asst_JK0Nis5xePIfHSwV5HTSv2XW"  # Asegúrate de que este ID corresponde a tu asistente de Mundoliva
 
 # URL de la API de WhatsApp
 WHATSAPP_URL = f"https://graph.facebook.com/v16.0/{WHATSAPP_PHONE_ID}/messages"
 
 # Lista global para evitar respuestas duplicadas
 processed_messages = set()
+
+# ----------------- Webhooks -----------------
 
 # Webhook de verificación para Meta
 @app.route("/webhook", methods=["GET"])
@@ -47,7 +49,7 @@ def receive_message():
 
         for entry in data["entry"]:
             for change in entry["changes"]:
-                # Filtrar mensajes de estado (sent, delivered, read)
+                # Filtrar eventos que no contienen mensajes de usuario
                 if "messages" not in change["value"]:
                     logger.info("ℹ️ Evento ignorado (no es un mensaje de usuario)")
                     continue
@@ -66,17 +68,18 @@ def receive_message():
                 text = msg["text"]["body"]
                 logger.info(f"📩 Mensaje de {sender}: {text}")
 
-                # Obtener respuesta de OpenAI con contexto
+                # Construir el prompt con contexto para usar la base de conocimientos de Mundoliva
                 prompt_with_context = (
-                    "Utilizando la base de conocimiento de Mundoliva, responde de forma informativa y "
-                    "específica a la siguiente consulta: " + text
+                    "Utilizando la base de conocimientos de Mundoliva, responde de forma precisa y específica a la siguiente consulta: " 
+                    + text
                 )
                 reply_text = get_gpt_response(prompt_with_context)
                 if not reply_text or reply_text.strip() == "":
                     reply_text = "Lo siento, hubo un problema con mi respuesta. ¿Puedes intentar reformular la pregunta?"
+
                 logger.info(f"✅ Respuesta de OpenAI: {reply_text}")
 
-                # Evitar responder con el mismo mensaje recibido
+                # Evitar respuestas que sean exactamente iguales al mensaje recibido
                 if reply_text.strip().lower() == text.strip().lower():
                     reply_text = "Entiendo tu mensaje. ¿En qué puedo ayudarte específicamente?"
 
@@ -89,6 +92,8 @@ def receive_message():
     except Exception as e:
         logger.error(f"⚠️ Error en receive_message: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# ----------------- Funciones Auxiliares -----------------
 
 # Función para enviar mensajes a WhatsApp
 def send_whatsapp_message(to, text):
@@ -135,7 +140,7 @@ def get_gpt_response(prompt):
             logger.error("⚠️ No se obtuvo thread_id de OpenAI")
             return None
 
-        # Enviar el mensaje al hilo
+        # Enviar el mensaje del usuario al hilo con el prompt con contexto
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers={
@@ -163,9 +168,8 @@ def get_gpt_response(prompt):
             return None
 
         messages = response.json().get("data", [])
-        logger.info("Mensajes de OpenAI: %s", messages)
+        logger.info("Respuesta completa de OpenAI: %s", json.dumps(messages, indent=2))
         if messages:
-            # Suponemos que la respuesta útil es la última
             last_message = messages[-1].get("content")
             if isinstance(last_message, str):
                 return last_message
@@ -174,11 +178,12 @@ def get_gpt_response(prompt):
             else:
                 return str(last_message)
         return "Lo siento, no se pudo obtener una respuesta de la IA."
+        
     except requests.exceptions.RequestException as e:
         logger.error("⚠️ Error en OpenAI: %s", e)
         return "Lo siento, hubo un problema con la IA."
 
-# Iniciar la aplicación Flask
+# ----------------- Iniciar la Aplicación Flask -----------------
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.getenv("PORT", 8080))
