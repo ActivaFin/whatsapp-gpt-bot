@@ -173,7 +173,7 @@ def get_gpt_response(prompt):
         )
         response.raise_for_status()
 
-        # Ejecutar el asistente, pasando también el vector de la base de conocimientos
+        # Ejecutar el asistente (se remueve la referencia a knowledge_base_vector)
         response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers={
@@ -181,10 +181,7 @@ def get_gpt_response(prompt):
                 "OpenAI-Beta": "assistants=v2",
                 "Content-Type": "application/json"
             },
-            json={
-                "assistant_id": ASSISTANT_ID,
-                "knowledge_base_vector": KNOWLEDGE_BASE_VECTOR
-            }
+            json={"assistant_id": ASSISTANT_ID}
         )
         response.raise_for_status()
         run_id = response.json().get("id")
