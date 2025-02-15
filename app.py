@@ -195,3 +195,45 @@ if __name__ == "__main__":
     from waitress import serve
     port = int(os.getenv("PORT", 8080))
     serve(app, host="0.0.0.0", port=port)
+
+processed_messages = set()  # Almacena los IDs de los mensajes procesados
+
+@app.route("/webhook", methods=["POST"])
+def receive_message():
+    try:
+        data = request.get_json()
+        logger.info("📩 Mensaje recibido: %s", json.dumps(data, indent=2))
+
+        if "entry" not in data:
+            return jsonify({"status": "error", "message": "Invalid payload"}), 400
+
+        for entry in data["entry"]:
+            for change in entry["changes"]:
+                if "messages" in change["value"]:
+                    msg = change["value"]["messages"][0]
+                    if msg["type"] == "text":
+                        message_id = msg["id"]
+                        if message_id in processed_messages:
+                            logger.info(f"⚠️ Mensaje ya procesado: {message_id}")
+                            return jsonify({"status": "success"}), 200
+
+                        sender = msg["from"]
+                        text = msg["text"]["body"]
+                        logger.info(f"📩 Mensaje de {sender}: {text}")
+
+                        # Obtener respuesta de OpenAI
+                        reply_text = get_gpt_response(text)
+                        logger.info(f"✅ Respuesta de OpenAI: {reply_text}")
+
+                        # Enviar respuesta a WhatsApp
+                        send_whatsapp_message(sender, reply_text)
+                        logger.info(f"✅ Mensaje enviado a WhatsApp: {reply_text}")
+
+                        # Marcar el mensaje como procesado
+                        processed_messages.add(message_id)
+
+        return jsonify({"status": "success"}), 200
+
+    except Exception as e:
+        logger.error(f"⚠️ Error en receive_message: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
