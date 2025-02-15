@@ -2,9 +2,8 @@ import os
 import requests
 import json
 import logging
+import time
 from flask import Flask, request, jsonify
-import time  # 👈 Agrega esta línea
-
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -12,11 +11,6 @@ logger = logging.getLogger(__name__)
 
 # Crear la instancia de Flask
 app = Flask(__name__)
-
-# Ruta raíz
-@app.route("/", methods=["GET"])
-def home():
-    return "¡Hola! Este es el servidor de WhatsApp GPT Bot.", 200
 
 # Configuración de variables de entorno
 WHATSAPP_TOKEN = os.getenv('WHATSAPP_TOKEN')
@@ -150,7 +144,7 @@ def get_gpt_response(prompt):
     except requests.exceptions.RequestException as e:
         logger.error(f"⚠️ Error en OpenAI: {e}")
         return "Lo siento, hubo un problema con la IA."
-        
+
 # Webhook de verificación para Meta
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
@@ -175,22 +169,20 @@ def receive_message():
 
         for entry in data["entry"]:
             for change in entry["changes"]:
-                if "messages" not in change["value"]:
-                    continue
+                if "messages" in change["value"]:
+                    msg = change["value"]["messages"][0]
+                    if msg["type"] == "text":
+                        sender = msg["from"]
+                        text = msg["text"]["body"]
+                        logger.info(f"📩 Mensaje de {sender}: {text}")
 
-                msg = change["value"]["messages"][0]
-                if msg["type"] != "text":
-                    continue
+                        # Obtener respuesta de OpenAI
+                        reply_text = get_gpt_response(text)
+                        logger.info(f"✅ Respuesta de OpenAI: {reply_text}")
 
-                sender = msg["from"]
-                text = msg["text"]["body"]
-                logger.info(f"📩 Mensaje de {sender}: {text}")
-
-                # Obtener respuesta de OpenAI
-                reply_text = get_gpt_response(text)
-
-                # Enviar respuesta a WhatsApp
-                send_whatsapp_message(sender, reply_text)
+                        # Enviar respuesta a WhatsApp
+                        send_whatsapp_message(sender, reply_text)
+                        logger.info(f"✅ Mensaje enviado a WhatsApp: {reply_text}")
 
         return jsonify({"status": "success"}), 200
 
